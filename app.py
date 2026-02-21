@@ -82,7 +82,7 @@ def draw_etiqueta_logic(c, x, y, item, logo_bytes, modo, rotar):
         c.setFont("Helvetica-Bold", 13)
         c.drawCentredString(x + 1.5*cm, y + 3.1*cm, f"${item.get('precio contado', 0)}")
         
-        # 
+        # Codigo de barras
         cod = str(item.get('codigo', '000'))
         c.setFont("Courier", 7)
         c.drawCentredString(x + 1.5*cm, y + 1.7*cm, cod)
@@ -123,7 +123,7 @@ def get_pdf_preview(item, logo_file, rotar):
 
 # Interfaz
 st.title("Generador de Etiquetas")
-st.write("Cargá tus archivos para generar el PDF de impresión en tamaño A44")
+st.write("Cargá tus archivos para generar el PDF de impresión en tamaño A4")
 
 ej_df = pd.DataFrame({'Articulo':['Campera de Cuero Negra'],'Talle':['XL'],'Precio Contado':[85000],'Precio Normal':[98000],'Codigo':['CC-001'],'Cantidad':[1]})
 buf_ex = io.BytesIO()
