@@ -136,11 +136,10 @@ with col_a:
 with col_b:
     logo_file = st.file_uploader("Subir logo del local", type=["png","jpg","jpeg"])
 
-
 if excel_file and logo_file:
     df = normalizar_columnas(pd.read_excel(excel_file).fillna(""))
-    st.write("**Previsualizacion de etiqueta**")
     st.write("---")
+    st.write("**Previsualizacion de etiqueta**")
     rotar_logo = st.checkbox("Rotar logo 90°", value=True)
 
     pdf_preview = get_pdf_preview(df.iloc[0].to_dict(), logo_file, rotar_logo)
