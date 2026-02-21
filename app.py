@@ -5,122 +5,154 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.units import cm
 from reportlab.graphics.barcode import code128
 from reportlab.lib.utils import ImageReader
+from reportlab.pdfbase.pdfmetrics import stringWidth
 import io
+import base64
 
-# Configuración de página
 st.set_page_config(page_title="Generador de Etiquetas", layout="centered")
 
-def draw_frentes(c, page_items, logo_bytes):
-    logo = ImageReader(logo_bytes)
-    margin = 1.0 * cm
-    et_width = 3.0 * cm
-    et_height = 8.0 * cm
-    cols = 6 # Etiquetas que entran a lo ancho en A4 con 1cm margen
+def normalizar_columnas(df):
+    df.columns = df.columns.str.strip().str.lower()
+    reemplazos = {'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u'}
+    for k, v in reemplazos.items():
+        df.columns = df.columns.str.replace(k, v)
+    return df
+
+def draw_wrapped_text(c, texto, x_centrado, y_start, max_width):
+    font_name = "Helvetica-Bold"
+    font_size = 4
+    c.setFont(font_name, font_size)
     
-    for index, item in enumerate(page_items):
-        col = index % cols
-        row = index // cols
-        x = margin + (col * et_width)
-        y = A4[1] - margin - ((row + 1) * et_height)
-        
-        c.setLineWidth(0.1)
-        c.setStrokeColorRGB(0.8, 0.8, 0.8)
-        c.rect(x, y, et_width, et_height)
-        
+    palabras = texto.split()
+    lineas = []
+    linea_actual = ""
+    
+    for palabra in palabras:
+        test_linea = linea_actual + (" " if linea_actual else "") + palabra
+        if stringWidth(test_linea, font_name, font_size) <= max_width:
+            linea_actual = test_linea
+        else:
+            lineas.append(linea_actual)
+            linea_actual = palabra
+    lineas.append(linea_actual)
+    
+    y = y_start
+    for linea in lineas[:2]:
+        c.drawCentredString(x_centrado, y, linea)
+        y -= 0.25 * cm 
+
+def draw_etiqueta_logic(c, x, y, item, logo_bytes, modo, rotar):
+    et_w, et_h = 3*cm, 8*cm
+    c.setLineWidth(0.1)
+    c.setStrokeColorRGB(0.8, 0.8, 0.8)
+    c.rect(x, y, et_w, et_h)
+
+    if modo == "frente" and logo_bytes:
+        logo = ImageReader(logo_bytes)
         c.saveState()
-        c.translate(x + et_width/2, y + et_height/2)
-        c.rotate(90)
-        c.drawImage(logo, -3.5*cm, -1.2*cm, width=7*cm, height=2.4*cm, preserveAspectRatio=True, mask='auto')
+        c.translate(x + et_w/2, y + et_h/2)
+        if rotar: c.rotate(90)
+        c.drawImage(logo, -3.5*cm if rotar else -1.3*cm, -1.2*cm if rotar else -1.2*cm, 
+                    width=7*cm if rotar else 2.6*cm, height=2.4*cm, preserveAspectRatio=True, mask='auto')
         c.restoreState()
-
-def draw_dorsos(c, page_items):
-    margin = 1.0 * cm
-    et_width = 3.0 * cm
-    et_height = 8.0 * cm
-    cols = 6
     
-    for index, item in enumerate(page_items):
-        col_normal = index % cols
-        col_espejo = (cols - 1) - col_normal 
-        row = index // cols
-        x = margin + (col_espejo * et_width)
-        y = A4[1] - margin - ((row + 1) * et_height)
-        
-        c.setLineWidth(0.1)
-        c.setStrokeColorRGB(0.8, 0.8, 0.8)
-        c.rect(x, y, et_width, et_height)
-        
+    elif modo == "dorso":
         c.setFillColorRGB(0, 0, 0)
-        c.setFont("Helvetica-Bold", 7)
-        articulo = str(item.get('Articulo', ''))[:18]
-        c.drawCentredString(x + et_width/2, y + et_height - 0.7*cm, articulo.upper())
-
-        # Recuadros estéticos
-        c.setLineWidth(0.5)
-        c.setStrokeColorRGB(0, 0, 0)
-        c.roundRect(x + 0.3*cm, y + et_height - 2.1*cm, et_width - 0.6*cm, 1.1*cm, 0.1*cm)
-        c.setFont("Helvetica", 7)
-        c.drawCentredString(x + et_width/2, y + et_height - 1.4*cm, "TALLE")
-        c.setFont("Helvetica-Bold", 10)
-        c.drawCentredString(x + et_width/2, y + et_height - 1.9*cm, str(item.get('Talle', '')))
-
-        c.roundRect(x + 0.3*cm, y + et_height - 5.2*cm, et_width - 0.6*cm, 2.8*cm, 0.1*cm)
-        c.setFont("Helvetica", 6)
-        c.drawCentredString(x + et_width/2, y + et_height - 2.8*cm, "PRECIO LISTA")
-        c.setFont("Helvetica-Bold", 9)
-        c.drawCentredString(x + et_width/2, y + et_height - 3.3*cm, f"${item.get('Precio Normal', 0)}")
         
+        # Articulo en dos renglones maximo
+        articulo_texto = str(item.get('articulo', '')).upper()
+        draw_wrapped_text(c, articulo_texto, x + 1.5*cm, y + 7.4*cm, et_w - 0.4*cm)
+
+        # Talle
+        c.setStrokeColorRGB(0, 0, 0)
+        c.roundRect(x + 0.3*cm, y + 5.8*cm, 2.4*cm, 1.1*cm, 0.1*cm)
+        c.setFont("Helvetica", 6)
+        c.drawCentredString(x + 1.5*cm, y + 6.5*cm, "TALLE")
+        c.setFont("Helvetica-Bold", 10)
+        c.drawCentredString(x + 1.5*cm, y + 6.0*cm, str(item.get('talle', '')))
+        
+        # Precios
+        c.roundRect(x + 0.3*cm, y + 2.7*cm, 2.4*cm, 2.8*cm, 0.1*cm)
+        c.setFont("Helvetica", 6)
+        c.drawCentredString(x + 1.5*cm, y + 5.1*cm, "PRECIO LISTA")
+        c.setFont("Helvetica-Bold", 9)
+        c.drawCentredString(x + 1.5*cm, y + 4.6*cm, f"${item.get('precio normal', 0)}")
         c.setFont("Helvetica-Bold", 6)
-        c.drawCentredString(x + et_width/2, y + et_height - 4.1*cm, "PRECIO EFECTIVO")
+        c.drawCentredString(x + 1.5*cm, y + 3.8*cm, "PRECIO EFECTIVO")
         c.setFont("Helvetica-Bold", 13)
-        c.drawCentredString(x + et_width/2, y + et_height - 4.8*cm, f"${item.get('Precio Contado', 0)}")
-
-        # Código de barras
-        codigo = str(item.get('Codigo', '0000'))
+        c.drawCentredString(x + 1.5*cm, y + 3.1*cm, f"${item.get('precio contado', 0)}")
+        
+        # 
+        cod = str(item.get('codigo', '000'))
         c.setFont("Courier", 7)
-        c.drawCentredString(x + et_width/2, y + 1.8*cm, codigo)
+        c.drawCentredString(x + 1.5*cm, y + 1.7*cm, cod)
         try:
-            bc = code128.Code128(codigo, barHeight=0.7*cm, barWidth=0.7)
-            bc.drawOn(c, x + (et_width - bc.width)/2, y + 0.8*cm)
-        except:
-            pass
+            bc = code128.Code128(cod, barHeight=0.7*cm, barWidth=0.7)
+            bc.drawOn(c, x + (3*cm - bc.width)/2, y + 0.7*cm)
+        except: pass
 
-st.title("Generador de Etiquetas para Local de Ropa")
-st.write("Subí tu Excel y tu Logo para generar el PDF listo para imprimir.")
+def get_pdf_bytes(df, logo_file, rotar):
+    items = []
+    for _, row in df.iterrows():
+        try:
+            for _ in range(int(row.get('cantidad', 1))): items.append(row.to_dict())
+        except: pass
+    
+    out = io.BytesIO()
+    c = canvas.Canvas(out, pagesize=A4)
+    for i in range(0, len(items), 18):
+        p_items = items[i:i+18]
+        for idx, it in enumerate(p_items):
+            draw_etiqueta_logic(c, 1*cm + (idx%6)*3*cm, A4[1]-1*cm-((idx//6)+1)*8*cm, it, logo_file, "frente", rotar)
+        c.showPage()
+        for idx, it in enumerate(p_items):
+            col_esp = 5 - (idx%6)
+            draw_etiqueta_logic(c, 1*cm + col_esp*3*cm, A4[1]-1*cm-((idx//6)+1)*8*cm, it, None, "dorso", False)
+        c.showPage()
+    c.save()
+    return out.getvalue()
 
-col1, col2 = st.columns(2)
-with col1:
-    excel_file = st.file_uploader("1. Archivo Excel (.xlsx)", type=["xlsx"])
-with col2:
-    logo_file = st.file_uploader("2. Logo de la tienda (PNG/JPG)", type=["png", "jpg", "jpeg"])
+def get_pdf_preview(item, logo_file, rotar):
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=(3*cm, 8*cm))
+    draw_etiqueta_logic(c, 0, 0, item, logo_file, "frente", rotar)
+    c.showPage()
+    draw_etiqueta_logic(c, 0, 0, item, None, "dorso", False)
+    c.save()
+    return buf.getvalue()
+
+# Interfaz
+st.title("Generador de Etiquetas")
+st.write("Este programa generará un PDF para realizar una impresion en hojas A4")
+
+ej_df = pd.DataFrame({'Articulo':['Campera de Cuero Negra'],'Talle':['XL'],'Precio Contado':[85000],'Precio Normal':[98000],'Codigo':['CC-001'],'Cantidad':[1]})
+buf_ex = io.BytesIO()
+with pd.ExcelWriter(buf_ex, engine='openpyxl') as w: ej_df.to_excel(w, index=False)
+st.download_button("Descargar planilla de ejemplo", buf_ex.getvalue(), "ejemplo_etiquetas.xlsx")
+
+col_a, col_b = st.columns(2)
+with col_a:
+    excel_file = st.file_uploader("Subir archivo Excel", type=["xlsx"])
+with col_b:
+    logo_file = st.file_uploader("Subir logo del local", type=["png","jpg","jpeg"])
+
 
 if excel_file and logo_file:
-    if st.button("🚀 Generar PDF de Etiquetas"):
-        df = pd.read_excel(excel_file).fillna("")
-        items = []
-        for _, row in df.iterrows():
-            cant = int(row['Cantidad']) if row['Cantidad'] != "" else 1
-            for _ in range(cant):
-                items.append(row.to_dict())
+    df = normalizar_columnas(pd.read_excel(excel_file).fillna(""))
+    st.write("**Previsualizacion de etiqueta**")
+    st.write("---")
+    rotar_logo = st.checkbox("Rotar logo 90°", value=True)
 
-        output = io.BytesIO()
-        c = canvas.Canvas(output, pagesize=A4)
-        
-        et_per_page = 18 # 3 columnas x 6 filas
-        for i in range(0, len(items), et_per_page):
-            page_items = items[i:i + et_per_page]
-            draw_frentes(c, page_items, logo_file)
-            c.showPage()
-            draw_dorsos(c, page_items)
-            c.showPage()
-        
-        c.save()
-        pdf_data = output.getvalue()
-        
-        st.success("¡PDF generado correctamente!")
-        st.download_button(
-            label="📥 Descargar PDF para Imprimir",
-            data=pdf_data,
-            file_name="etiquetas_alabama.pdf",
-            mime="application/pdf"
-        )
+    pdf_preview = get_pdf_preview(df.iloc[0].to_dict(), logo_file, rotar_logo)
+    base64_pdf = base64.b64encode(pdf_preview).decode('utf-8')
+    pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="400" type="application/pdf"></iframe>'
+    st.markdown(pdf_display, unsafe_allow_html=True)
+    
+    st.write(" ") 
+    pdf_final = get_pdf_bytes(df, logo_file, rotar_logo)
+    st.download_button(
+        label="Descargar PDF",
+        data=pdf_final,
+        file_name="etiquetas.pdf",
+        mime="application/pdf"
+    )
