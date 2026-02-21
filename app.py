@@ -123,7 +123,7 @@ def get_pdf_preview(item, logo_file, rotar):
 
 # Interfaz
 st.title("Generador de Etiquetas")
-st.write("Este programa generará un PDF para realizar una impresion en hojas A4")
+st.write("Cargá tus archivos para generar el PDF de impresión en tamaño A44")
 
 ej_df = pd.DataFrame({'Articulo':['Campera de Cuero Negra'],'Talle':['XL'],'Precio Contado':[85000],'Precio Normal':[98000],'Codigo':['CC-001'],'Cantidad':[1]})
 buf_ex = io.BytesIO()
